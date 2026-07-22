@@ -10,7 +10,7 @@ Primary users: Forward Deployed Engineers / AI consultants (builder mode) and th
 
 ## Current phase
 
-**Phase 0 — Architecture & decisions.** Do not write application code. See `docs/PHASES.md`.
+**Phase 1 — Thin Foundation + Demo Company.** Application code permitted (foundation only). See `docs/PHASES.md`. (Phase 0 closed: architecture, schema v1.1, ADRs 001–005, dogfood checkpoint recorded.)
 
 Update this line when a phase completes. Never work ahead of the current phase without being asked.
 

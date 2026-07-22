@@ -100,6 +100,48 @@ See [`schema.sql`](schema.sql) §RLS for the full policy set.
 
 ---
 
+## 4A. Data model — entity relationships (schema v1.1)
+
+The core spine: an **engagement** accumulates **documents** (→ **chunks**) and **interviews** (→ **answers**); both chunks and answers are the two kinds of **evidence source**. **Opportunities** are scored (**scores**) and modeled (**roi_models**); **deliverables** synthesize them. **evidence_links** is the polymorphic join tying any claim-bearing record to a source chunk/answer. (Full column detail lives in [`schema.sql`](schema.sql); this is the relationship map, not every field.)
+
+```mermaid
+erDiagram
+    organizations ||--o{ users : "has"
+    organizations ||--o{ engagements : "owns"
+    engagements ||--o{ documents : "gathers"
+    documents ||--o{ chunks : "parsed into"
+    engagements ||--o{ interviews : "runs"
+    interviews ||--o{ interview_participants : "has"
+    stakeholders ||--o{ interview_participants : "attends"
+    interviews ||--o{ answers : "produces"
+    stakeholders ||--o{ answers : "gives"
+    answers ||--o| answers : "superseded_by"
+    engagements ||--o{ stakeholders : "maps"
+    engagements ||--o{ systems : "maps"
+    engagements ||--o{ processes : "maps"
+    stakeholders ||--o{ processes : "owns"
+    engagements ||--o{ opportunities : "surfaces"
+    processes ||--o{ opportunities : "motivates"
+    opportunities ||--o{ scores : "scored by"
+    opportunities ||--o{ roi_models : "modeled by"
+    engagements ||--o{ deliverables : "produces"
+    deliverables ||--o| deliverables : "supersedes"
+    chunks ||--o{ evidence_links : "sources (chunk)"
+    answers ||--o{ evidence_links : "sources (answer)"
+    opportunities ||--o{ recommendation_feedback : "rated"
+    deliverables ||--o{ recommendation_feedback : "rated"
+```
+
+**v1.1 amendments visible above** (from the Phase 0 dogfood checkpoint, see [`PHASES.md`](PHASES.md)):
+
+1. **Superseded answers** — `answers` self-relation (`superseded_by_answer_id`) + a `status` (`active`/`superseded`/`retracted`). Agents query `status='active'` for latest truth; history is preserved as older rows.
+2. **Requested documents** — `documents.status` is a full lifecycle (`requested`→`received`→`processing`→`processed`/`failed`). A `requested` row carries no file (nullable `storage_path`/`file_name`) and underpins the Phase 3 "agent requests supporting docs" feature.
+3. **Non-text media** — `doc_type` includes `image`/`screenshot`/`diagram`/`whiteboard_photo`; `documents.extraction_status` tracks vision/OCR whose output becomes **chunks**, so `evidence_links` works uniformly across text and media. (Extraction pipeline is Phase 2; the schema only must not preclude it.)
+4. **Deliverable versioning** — `deliverables.supersedes_deliverable_id` + `version`; v2 is a new row pointing at v1, so prior versions are preserved.
+5. **Group interviews** — `interview_participants` (many-to-many, optional `role_in_session`) replaces the former 1:1 `interviews.stakeholder_id`.
+
+---
+
 ## 5. The three agents + critic (orchestration)
 
 Per **ADR-004**, there are exactly three agents plus a critic pass. The specialist "roles" from the charter (Business Analyst, Process Intelligence, AI Solutions Architect, Automation, Security & Governance, ROI Analyst, Executive Communications, Implementation Planning) are **prompt perspectives** applied *inside* these three — not standing agents.
@@ -274,4 +316,6 @@ vedette/
 
 ## 9. What Phase 0 intentionally leaves open
 
-Carried into the summary and open-questions handoff (not decided here): embedding model/provider choice and vector dimension; ROI default constants (loaded-cost bands, adoption ramp shape); exact Clerk JWT claim wiring for `org_id`; whether `agent_runs`/`roi_models` (supporting tables below the 16 required) stay as-is or get folded. These are flagged in the session summary and belong to Phase 1 kickoff.
+**Resolved since first draft:** embedding model/provider + vector dimension → **ADR-005** (OpenAI `text-embedding-3-small`, 1536, cosine). Schema amendments from the dogfood checkpoint → **v1.1** (§4A).
+
+**Still open, for Phase 1 kickoff:** ROI default constants (loaded-cost bands, adoption-ramp shape); exact Clerk JWT claim wiring for `org_id` (**verify against Clerk's current docs, do not assume the `{{org.id}}` shape**); whether `agent_runs`/`roi_models` (supporting tables below the required set) stay as-is or get folded.

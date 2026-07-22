@@ -13,6 +13,14 @@ Each phase = one focused Claude Code session (or a few). A phase is not done unt
 
 **Dogfood checkpoint:** Walk the schema against my last real discovery engagement — can every artifact from that engagement live in this model?
 
+**Dogfood checkpoint — DONE (→ schema v1.1).** Walked the model against real organizational discovery experience. It held for the core spine, but surfaced **five gaps**, all resolved in `docs/schema.sql` v1.1 (and reflected in `docs/architecture.md` §4A):
+
+1. **Superseded answers** — interview answers get corrected later (e.g. a follow-up email). Added `answers.status` (active/superseded/retracted) + self-referencing `superseded_by_answer_id`, so agents prefer the latest truth while history is preserved.
+2. **Requested documents** — discovery asks for documents that don't exist yet. Added a document lifecycle (`requested`→`received`→`processing`→`processed`/`failed`); a `requested` row has no file attached. Underpins the Phase 3 "agent requests supporting docs" feature.
+3. **Non-text media** — whiteboard photos, screenshots, diagrams are first-class artifacts. `doc_type` gained media kinds and `documents.extraction_status` tracks vision/OCR whose output becomes chunks, so evidence links work uniformly. (Extraction pipeline itself is Phase 2.)
+4. **Deliverable versioning** — deliverables get revised after review. Added `version` + `supersedes_deliverable_id` so v1 is preserved when v2 ships.
+5. **Group interviews** — sessions often have multiple participants. Replaced the 1:1 `interviews.stakeholder_id` with an `interview_participants` junction (many-to-many, optional `role_in_session`).
+
 ---
 
 ## Phase 1 — Thin Foundation + Demo Company (1–2 days max)

@@ -1,5 +1,5 @@
 -- =============================================================================
--- Vedette — Database Schema & RLS Strategy (Phase 0)
+-- Vedette — Database Schema & RLS Strategy (v1.1)
 -- =============================================================================
 -- Target: Supabase Postgres (>= 15) with pgvector. Data access is the Supabase
 -- client (ADR-001, no ORM). Auth is Clerk as a Supabase third-party auth
@@ -7,6 +7,15 @@
 --
 -- This file is the source of truth for the data model. Phase 1 splits it into
 -- ordered files under supabase/migrations/. It is written to be run top-to-bottom.
+--
+-- v1.1 (Phase 0 dogfood checkpoint amendments — see docs/PHASES.md Phase 0):
+--   1. Superseded answers: answers.status + answers.superseded_by_answer_id.
+--   2. Requested documents: document lifecycle (requested→…→processed); a
+--      'requested' row may have no file. storage_path/file_name now nullable.
+--   3. Non-text media: doc_type gains image/screenshot/diagram/whiteboard_photo;
+--      documents.extraction_status tracks vision/OCR → chunks (pipeline is Phase 2).
+--   4. Deliverable versioning: deliverables.version + supersedes_deliverable_id.
+--   5. Group interviews: interview_participants junction replaces the 1:1 link.
 --
 -- Invariants encoded here (see docs/architecture.md §1):
 --   * Multi-tenant: every domain row carries organization_id; RLS is default-deny.
@@ -18,6 +27,7 @@
 -- Required tables (Phase 0 acceptance): organizations, users, engagements,
 --   documents, chunks, interviews, answers, processes, systems, stakeholders,
 --   opportunities, scores, evidence_links, deliverables, recommendation_feedback.
+-- v1.1 table: interview_participants (group-interview junction).
 -- Supporting tables (justified, clearly labeled): roi_models, agent_runs.
 -- =============================================================================
 
@@ -36,8 +46,31 @@ create type engagement_status   as enum ('discovery', 'analysis', 'synthesis', '
 
 create type doc_type            as enum (
   'sop', 'process_doc', 'transcript', 'policy', 'org_chart',
-  'report', 'presentation', 'spreadsheet', 'ticket_export', 'other');
-create type doc_status          as enum ('uploaded', 'parsing', 'parsed', 'chunked', 'embedded', 'failed');
+  'report', 'presentation', 'spreadsheet', 'ticket_export',
+  -- v1.1: non-text media are first-class discovery artifacts (whiteboard
+  -- photos, screenshots, diagrams). Their text is extracted into chunks (Phase 2)
+  -- so evidence links work uniformly across text and media.
+  'image', 'screenshot', 'diagram', 'whiteboard_photo',
+  'other');
+
+-- v1.1: full document LIFECYCLE (replaces the old parse-only doc_status).
+-- A 'requested' row can exist with NO file attached yet — the discovery process
+-- asks for documents that don't exist yet (underpins Phase 3 "agent requests docs").
+--   requested  -> asked for, no file
+--   received   -> file uploaded, awaiting processing
+--   processing -> parsing / chunking / embedding / media extraction in flight
+--   processed  -> fully ingested (chunked + embedded, media extracted)
+--   failed     -> processing error (see parse_error)
+create type document_status     as enum ('requested', 'received', 'processing', 'processed', 'failed');
+
+-- v1.1: media (image/screenshot/diagram) extraction state. 'not_applicable' for
+-- text docs; image docs move pending -> extracted (vision/OCR, Phase 2) -> chunks.
+create type extraction_status   as enum ('not_applicable', 'pending', 'extracted', 'failed');
+
+-- v1.1: answers get corrected later (e.g. a follow-up email). Status + a
+-- self-referencing supersession pointer let agents prefer the latest truth
+-- while preserving the full history.
+create type answer_status       as enum ('active', 'superseded', 'retracted');
 
 create type discovery_area      as enum (
   'company_profile', 'objectives', 'dept_structure', 'tech_environment',
@@ -187,22 +220,36 @@ create table public.engagements (
   updated_at      timestamptz not null default now()
 );
 
--- 4.4 documents — uploaded source material (file itself lives in Storage)
+-- 4.4 documents — source material (file lives in Storage). v1.1: also models
+--     REQUESTED-but-not-yet-supplied documents and non-text media.
+--     A 'requested' row has no file yet, so storage_path/file_name are NULLABLE;
+--     they are populated when the document is received.
 create table public.documents (
-  id              uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations(id) on delete cascade,
-  engagement_id   uuid not null references public.engagements(id) on delete cascade,
-  uploaded_by     uuid references public.users(id) on delete set null,
-  storage_path    text not null,              -- {organization_id}/{engagement_id}/{id}/filename
-  file_name       text not null,
-  mime_type       text,
-  byte_size       bigint,
-  doc_type        doc_type not null default 'other',
-  title           text,
-  status          doc_status not null default 'uploaded',
-  parse_error     text,
-  created_at      timestamptz not null default now(),
-  updated_at      timestamptz not null default now()
+  id                uuid primary key default gen_random_uuid(),
+  organization_id   uuid not null references public.organizations(id) on delete cascade,
+  engagement_id     uuid not null references public.engagements(id) on delete cascade,
+  uploaded_by       uuid references public.users(id) on delete set null,
+  storage_path      text,                       -- NULL until received; {org}/{engagement}/{id}/filename
+  file_name         text,                       -- NULL for a still-requested document
+  mime_type         text,                       -- text/* or image/* (media, v1.1)
+  byte_size         bigint,
+  doc_type          doc_type not null default 'other',
+  title             text,
+  -- v1.1: lifecycle. Default 'received' for an uploaded file; a document the
+  -- discovery agent asks for is inserted as 'requested' with request_note set.
+  status            document_status not null default 'received',
+  request_note      text,                       -- why it was requested / what's expected
+  requested_by      author_kind,                -- 'agent' or 'human' when status began as 'requested'
+  -- v1.1: media extraction (vision/OCR → chunks). 'not_applicable' for text docs.
+  extraction_status extraction_status not null default 'not_applicable',
+  parse_error       text,                       -- populated on status='failed'
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now(),
+  -- A received/processed document must have a file; a requested one must not.
+  constraint documents_file_presence check (
+    (status = 'requested' and storage_path is null)
+    or (status <> 'requested' and storage_path is not null)
+  )
 );
 
 -- 4.5 chunks — parsed + embedded document segments (pgvector). SOURCE of evidence.
@@ -239,12 +286,13 @@ create table public.stakeholders (
   updated_at      timestamptz not null default now()
 );
 
--- 4.7 interviews — discovery sessions, typically one per stakeholder
+-- 4.7 interviews — discovery sessions. v1.1: a session can have MANY participants
+--     (group interviews are common), so the 1:1 stakeholder link is gone — see
+--     interview_participants below.
 create table public.interviews (
   id              uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
   engagement_id   uuid not null references public.engagements(id) on delete cascade,
-  stakeholder_id  uuid references public.stakeholders(id) on delete set null,
   conducted_by    uuid references public.users(id) on delete set null,
   title           text,
   status          interview_status not null default 'in_progress',
@@ -254,19 +302,40 @@ create table public.interviews (
   updated_at      timestamptz not null default now()
 );
 
+-- 4.7a interview_participants — v1.1 junction: which stakeholders attended a
+--      session, and (optionally) their role in that specific session.
+create table public.interview_participants (
+  id               uuid primary key default gen_random_uuid(),
+  organization_id  uuid not null references public.organizations(id) on delete cascade,
+  engagement_id    uuid not null references public.engagements(id) on delete cascade,
+  interview_id     uuid not null references public.interviews(id) on delete cascade,
+  stakeholder_id   uuid not null references public.stakeholders(id) on delete cascade,
+  role_in_session  text,                  -- optional, e.g. 'lead', 'sme', 'note-taker'
+  created_at       timestamptz not null default now(),
+  unique (interview_id, stakeholder_id)
+);
+
 -- 4.8 answers — interview Q/A. Each answer is an EVIDENCE source (see evidence_links).
+--     v1.1: answers get corrected later. status + superseded_by_answer_id keep the
+--     latest truth discoverable while preserving history. The successor is a NEW
+--     answers row; the old row flips to status='superseded' pointing at it.
 create table public.answers (
-  id              uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations(id) on delete cascade,
-  engagement_id   uuid not null references public.engagements(id) on delete cascade,
-  interview_id    uuid not null references public.interviews(id) on delete cascade,
-  discovery_area  discovery_area,
-  question        text not null,
-  answer          text,
-  asked_by        author_kind not null default 'agent',   -- agent-generated vs human-entered Q
-  confidence      numeric(4,3) check (confidence between 0 and 1),
-  answered_at     timestamptz,
-  created_at      timestamptz not null default now()
+  id                     uuid primary key default gen_random_uuid(),
+  organization_id        uuid not null references public.organizations(id) on delete cascade,
+  engagement_id          uuid not null references public.engagements(id) on delete cascade,
+  interview_id           uuid not null references public.interviews(id) on delete cascade,
+  stakeholder_id         uuid references public.stakeholders(id) on delete set null,  -- who gave it (v1.1, optional in group sessions)
+  discovery_area         discovery_area,
+  question               text not null,
+  answer                 text,
+  asked_by               author_kind not null default 'agent',   -- agent-generated vs human-entered Q
+  status                 answer_status not null default 'active',
+  superseded_by_answer_id uuid references public.answers(id) on delete set null,
+  confidence             numeric(4,3) check (confidence between 0 and 1),
+  answered_at            timestamptz,
+  created_at             timestamptz not null default now(),
+  -- can't be its own successor
+  constraint answers_not_self_superseding check (superseded_by_answer_id is null or superseded_by_answer_id <> id)
 );
 
 -- 4.9 systems — software/tools in the client environment (system map nodes)
@@ -414,20 +483,25 @@ create trigger trg_evidence_source
 
 -- 4.15 deliverables — executive outputs. Sections + claims live in structured JSON,
 --      each claim referencing evidence_links ids. Critic verdict recorded inline.
+--      v1.1: deliverables are revised after review. A new version is a NEW row
+--      (version incremented) whose supersedes_deliverable_id points at the prior
+--      version, so v1 is preserved when v2 ships.
 create table public.deliverables (
-  id              uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations(id) on delete cascade,
-  engagement_id   uuid not null references public.engagements(id) on delete cascade,
-  type            deliverable_type not null,
-  title           text not null,
-  status          deliverable_status not null default 'draft',
-  content         jsonb not null default '{}'::jsonb,   -- {sections:[{heading, body, claims:[{text, evidence_link_ids:[]}]}]}
-  critic_notes    jsonb,                                -- {verdict, issues:[…]}
-  version         int not null default 1,
-  generated_by    author_kind not null default 'agent',
-  created_by      uuid references public.users(id) on delete set null,
-  created_at      timestamptz not null default now(),
-  updated_at      timestamptz not null default now()
+  id                       uuid primary key default gen_random_uuid(),
+  organization_id          uuid not null references public.organizations(id) on delete cascade,
+  engagement_id            uuid not null references public.engagements(id) on delete cascade,
+  type                     deliverable_type not null,
+  title                    text not null,
+  status                   deliverable_status not null default 'draft',
+  content                  jsonb not null default '{}'::jsonb,   -- {sections:[{heading, body, claims:[{text, evidence_link_ids:[]}]}]}
+  critic_notes             jsonb,                                -- {verdict, issues:[…]}
+  version                  int not null default 1,
+  supersedes_deliverable_id uuid references public.deliverables(id) on delete set null,
+  generated_by             author_kind not null default 'agent',
+  created_by               uuid references public.users(id) on delete set null,
+  created_at               timestamptz not null default now(),
+  updated_at               timestamptz not null default now(),
+  constraint deliverables_not_self_superseding check (supersedes_deliverable_id is null or supersedes_deliverable_id <> id)
 );
 
 -- 4.16 recommendation_feedback — accept/reject/edit tracking (learning signal).
@@ -473,8 +547,15 @@ create index on public.documents             (organization_id, engagement_id);
 create index on public.chunks                (organization_id, engagement_id);
 create index on public.chunks                (document_id);
 create index on public.interviews            (organization_id, engagement_id);
+create index on public.interview_participants (organization_id, engagement_id, interview_id);
+create index on public.interview_participants (stakeholder_id);
 create index on public.answers               (organization_id, engagement_id, interview_id);
+-- v1.1: quickly resolve supersession chains and filter to current answers.
+create index on public.answers               (superseded_by_answer_id);
+create index on public.answers               (organization_id, engagement_id, status);
 create index on public.stakeholders          (organization_id, engagement_id);
+-- v1.1: find requested-but-unreceived documents (the agent's outstanding asks).
+create index on public.documents             (organization_id, engagement_id, status);
 create index on public.systems               (organization_id, engagement_id);
 create index on public.processes             (organization_id, engagement_id);
 create index on public.opportunities         (organization_id, engagement_id);
@@ -532,6 +613,7 @@ alter table public.engagements              enable row level security;
 alter table public.documents                enable row level security;
 alter table public.chunks                   enable row level security;
 alter table public.interviews               enable row level security;
+alter table public.interview_participants   enable row level security;
 alter table public.answers                  enable row level security;
 alter table public.stakeholders             enable row level security;
 alter table public.systems                  enable row level security;
@@ -564,14 +646,14 @@ create policy users_admin_write on public.users
   with check (organization_id = auth.org_id() and auth.org_role() in ('owner','admin'));
 
 -- 7.3 Domain tables — uniform pattern: read within tenant, write if can_write().
---     Generated below to keep the 15 domain tables perfectly consistent.
+--     Generated below to keep the 16 domain tables perfectly consistent.
 do $$
 declare t text;
 begin
   foreach t in array array[
-    'engagements','documents','chunks','interviews','answers','stakeholders',
-    'systems','processes','opportunities','scores','roi_models','evidence_links',
-    'deliverables','recommendation_feedback','agent_runs'
+    'engagements','documents','chunks','interviews','interview_participants',
+    'answers','stakeholders','systems','processes','opportunities','scores',
+    'roi_models','evidence_links','deliverables','recommendation_feedback','agent_runs'
   ] loop
     -- SELECT: any member of the tenant
     execute format($f$
