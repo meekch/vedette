@@ -206,8 +206,8 @@ create table public.documents (
 );
 
 -- 4.5 chunks — parsed + embedded document segments (pgvector). SOURCE of evidence.
---     NOTE: vector dimension is provisional (1536 = OpenAI text-embedding-3-small).
---     Final embedding model is an OPEN QUESTION for Phase 1/2 — see architecture §9.
+--     Embedding model pinned in ADR-005: OpenAI text-embedding-3-small (1536 dims),
+--     cosine distance. Voyage AI is the documented upgrade path (see ADR-005).
 create table public.chunks (
   id              uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
@@ -490,7 +490,8 @@ create index on public.evidence_links (organization_id, engagement_id, subject_t
 create index on public.evidence_links (source_type, source_id);
 
 -- Vector similarity. HNSW for good recall/latency without a training step.
--- (cosine ops; swap to vector_l2_ops if the embedding model prefers L2.)
+-- Cosine distance opclass (vector_cosine_ops), matching the embedding model
+-- pinned in ADR-005 (OpenAI text-embedding-3-small, 1536 dims, cosine).
 create index on public.chunks using hnsw (embedding vector_cosine_ops);
 
 -- ----------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 # Vedette — Claude Code Operating Instructions
 
-Read this file every session. Read `docs/CHARTER.md` before any architectural or product decision. Read `docs/DECISIONS.md` before touching the stack. Follow the current phase only.
+Read this file every session. Read `docs/CHARTER.md` before any architectural or product decision. Read `docs/DECISIONS.md` (the index of ADRs in `docs/adr/`) before touching the stack. Follow the current phase only.
 
 ## What this is
 
