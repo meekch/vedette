@@ -1,0 +1,71 @@
+# === Dependencies ===
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# === Next.js ===
+/.next/
+/out/
+next-env.d.ts
+
+# === Production build ===
+/build
+/dist
+
+# === Testing / coverage ===
+/coverage
+*.lcov
+
+# === TypeScript ===
+*.tsbuildinfo
+
+# === Environment & secrets ===
+# Never commit real secrets. Commit a .env.example instead.
+.env
+.env.*
+!.env.example
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# === Supabase ===
+# Local Supabase CLI state, generated files, and temp data
+/supabase/.branches
+/supabase/.temp
+/supabase/logs
+.supabase/
+
+# === Clerk ===
+# Clerk keys live in .env* (already ignored)
+
+# === Vercel ===
+/.vercel
+
+# === Logs ===
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-debug.log*
+
+# === Editor / OS ===
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.swp
+*~
+
+# === Misc ===
+.cache/
+.turbo/
