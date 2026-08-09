@@ -108,6 +108,7 @@ Scope discipline is part of the work, so this is explicit.
 | **Analysis & Scoring Agent** — Zod-validated, provider-swappable, `claude-opus-5` | ✅ **Built** |
 | **Demo engagement** — Meridian Field Services, 8 documents, 26 chunks | ✅ **Built** |
 | **Database** — 18 tables live on Supabase, RLS enabled and proven by test | ✅ **Built** |
+| **Seed loader** — `npm run seed`, transactional and idempotent | ✅ **Built** |
 | Dashboard | ✅ Built (derived from seed, no hardcoded figures) |
 | Document ingestion + entity browser | ⏳ Phase 2 — honest stub |
 | Adaptive discovery + interview tracker | ⏳ Phase 3 — honest stub |
@@ -135,11 +136,20 @@ npm run dev            # → http://localhost:3000/opportunities
 The demo runs with **no environment variables and no database** — the seeded engagement and its analysis snapshot are committed. Keys are needed only to regenerate the analysis.
 
 ```bash
-npm test               # 37 tests: ROI arithmetic, schema conformance, evidence integrity, RLS
+npm test               # 39 tests: ROI arithmetic, schema conformance, evidence integrity, RLS
 npm run typecheck
 npm run lint
 npm run build
 ```
+
+**Loading the demo engagement into a database** (optional — the UI does not need it):
+
+```bash
+npm run seed           # Meridian → Supabase; refuses to overwrite without --force
+npm run seed -- --force
+```
+
+One command, as required by `CLAUDE.md`. It runs in a single transaction, resolves foreign keys in dependency order, and threads the seed's chunk ids through to database UUIDs so every `evidence_link` points at a real row — a dangling citation aborts the whole load rather than producing an evidence drawer that opens on nothing.
 
 > **Adding a dependency on Windows?** Run `npm run lockfile:linux` afterwards (requires WSL). npm omits Linux-only optional deps — `@emnapi/*`, pulled in by the wasm fallbacks for `sharp` and `@tailwindcss/oxide` — from a lockfile generated on Windows, so `npm ci` then fails on the CI runner with `EUSAGE` while everything passes locally. The `--os`/`--cpu` flags do not fix it; the lockfile has to be generated under Linux node.
 

@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "analyze": "tsx --conditions=react-server scripts/analyze.ts",
-    "lockfile:linux": "wsl -e bash -lc \"source ~/.nvm/nvm.sh && nvm use node >/dev/null && npm install --package-lock-only --no-audit --no-fund\""
+    "lockfile:linux": "wsl -e bash -lc \"source ~/.nvm/nvm.sh && nvm use node >/dev/null && npm install --package-lock-only --no-audit --no-fund\"",
+    "seed": "tsx --conditions=react-server scripts/seed.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.36",

@@ -40,31 +40,53 @@ export const MERIDIAN_OBJECTIVES = [
   "Reduce first-year technician attrition, currently 38%",
 ] as const;
 
+/**
+ * `roleType` maps to the `stakeholder_role` enum in the database
+ * (sponsor | decision_maker | sme | end_user | it | other). It is recorded here
+ * rather than inferred from job titles by the loader — a title is not a role on
+ * an engagement, and guessing at insert time would bury a judgment call in a
+ * script.
+ */
 export const MERIDIAN_STAKEHOLDERS = [
   {
     name: "Dana Ruiz",
     title: "Director of Dispatch Operations",
+    department: "Dispatch",
+    roleType: "sme",
+    influence: 4,
     notes:
       "Owns intake and scheduling. Ten years at Meridian. The person everyone calls when the process breaks.",
   },
   {
     name: "Marcus Bell",
     title: "VP Field Operations",
+    department: "Field Operations",
+    roleType: "sponsor",
+    influence: 5,
     notes: "Owns the technician workforce across all three regions. Sponsor of this engagement.",
   },
   {
     name: "Priya Raghavan",
     title: "Controller",
+    department: "Finance",
+    roleType: "decision_maker",
+    influence: 4,
     notes: "Owns billing, AP, and the revenue-leakage problem. Deeply sceptical of software projects.",
   },
   {
     name: "Tom Okafor",
     title: "Regional Manager, Northeast (acquired 2024)",
+    department: "Field Operations",
+    roleType: "end_user",
+    influence: 3,
     notes: "Still runs the legacy scheduling tool. Resistant to the ServiceTitan migration.",
   },
   {
     name: "Sarah Lindqvist",
     title: "Chief Operating Officer",
+    department: "Executive",
+    roleType: "decision_maker",
+    influence: 5,
     notes: "Reports to the PE sponsor. Wants a defensible plan, not a technology wish list.",
   },
 ] as const;
