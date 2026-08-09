@@ -69,3 +69,5 @@ Thumbs.db
 # === Misc ===
 .cache/
 .turbo/
+
+.vercel

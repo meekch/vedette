@@ -9,7 +9,8 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "analyze": "tsx --conditions=react-server scripts/analyze.ts"
+    "analyze": "tsx --conditions=react-server scripts/analyze.ts",
+    "lockfile:linux": "wsl -e bash -lc \"source ~/.nvm/nvm.sh && nvm use node >/dev/null && npm install --package-lock-only --no-audit --no-fund\""
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.36",

@@ -140,6 +140,8 @@ npm run lint
 npm run build
 ```
 
+> **Adding a dependency on Windows?** Run `npm run lockfile:linux` afterwards (requires WSL). npm omits Linux-only optional deps — `@emnapi/*`, pulled in by the wasm fallbacks for `sharp` and `@tailwindcss/oxide` — from a lockfile generated on Windows, so `npm ci` then fails on the CI runner with `EUSAGE` while everything passes locally. The `--os`/`--cpu` flags do not fix it; the lockfile has to be generated under Linux node.
+
 ### Environment
 
 Only needed for `npm run analyze`. Copy `.env.example` → `.env.local`.
