@@ -34,14 +34,14 @@ export default function LandingPage() {
           and produces executive-ready deliverables — never from thin air.
         </p>
         <div className="mt-8 flex flex-wrap gap-3">
-          <Link href="/dashboard" className={buttonVariants({ size: "lg" })}>
-            Enter the demo workspace
+          <Link href="/opportunities" className={buttonVariants({ size: "lg" })}>
+            See a scored opportunity backlog
           </Link>
           <Link
-            href="/documents"
+            href="/dashboard"
             className={buttonVariants({ variant: "outline", size: "lg" })}
           >
-            Browse the knowledge base
+            Enter the demo workspace
           </Link>
         </div>
       </section>
