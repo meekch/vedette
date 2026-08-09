@@ -81,7 +81,7 @@ Three agents, not nine — Discovery, Analysis & Scoring, Executive Synthesis, w
 
 The schema is the part of this repository that took the most thinking, and it is where the engagement experience actually shows.
 
-[`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql) — 17 tables, multi-tenant by `organization_id`, default-deny RLS on every table, pgvector at 1536 dimensions with a cosine HNSW index ([ADR-005](docs/adr/ADR-005.md)).
+[`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql) — 18 tables, multi-tenant by `organization_id`, default-deny RLS on every table, pgvector at 1536 dimensions with a cosine HNSW index ([ADR-005](docs/adr/ADR-005.md)). Applied and verified on a live Supabase project: RLS on all 18, 4 policies each (2–3 on the two tables with narrower rules), plus a private `documents` bucket with 4 storage policies.
 
 The v1.0 draft was walked against a real discovery engagement. It held for the core spine and broke in five specific places — each of which is a thing that happens on every engagement and appears in no textbook data model:
 
@@ -107,12 +107,13 @@ Scope discipline is part of the work, so this is explicit.
 | **Deterministic ROI engine** — pure TypeScript, 21 tests | ✅ **Built** |
 | **Analysis & Scoring Agent** — Zod-validated, provider-swappable, `claude-opus-5` | ✅ **Built** |
 | **Demo engagement** — Meridian Field Services, 8 documents, 26 chunks | ✅ **Built** |
-
-The committed analysis is a real run: 7 opportunities and 13 coverage gaps, citing **all 26** available chunks, with 13 of 56 dimension scores self-flagged as assumptions. It passes the same evidence contract the schema enforces at generation time — `npm test` re-checks that on every run.
+| **Database** — 18 tables live on Supabase, RLS enabled and proven by test | ✅ **Built** |
 | Dashboard | ✅ Built (derived from seed, no hardcoded figures) |
 | Document ingestion + entity browser | ⏳ Phase 2 — honest stub |
 | Adaptive discovery + interview tracker | ⏳ Phase 3 — honest stub |
 | Executive brief + PDF export | ⏳ Phase 5 — honest stub |
+
+The committed analysis is a real run: 7 opportunities and 13 coverage gaps, citing **all 26** available chunks, with 13 of 56 dimension scores self-flagged as assumptions. It passes the same evidence contract the schema enforces at generation time — `npm test` re-checks that on every run.
 
 **Deliberately deferred:**
 
@@ -134,7 +135,7 @@ npm run dev            # → http://localhost:3000/opportunities
 The demo runs with **no environment variables and no database** — the seeded engagement and its analysis snapshot are committed. Keys are needed only to regenerate the analysis.
 
 ```bash
-npm test               # 33 tests: ROI arithmetic, schema conformance, evidence integrity
+npm test               # 37 tests: ROI arithmetic, schema conformance, evidence integrity, RLS
 npm run typecheck
 npm run lint
 npm run build
@@ -178,8 +179,13 @@ tests/roi.test.ts     Arithmetic, ramp behaviour, payback, out-of-range guards
 tests/seed.test.ts    Snapshot validates against the live agent schema;
                       every cited evidence id resolves; nothing cites an
                       unreceived document; no invented currency in prose
+tests/rls.test.ts     Zero-leak: an authenticated caller with no org claim sees
+                      nothing. Runs against a real database; skipped without
+                      DATABASE_URL so a fresh clone and CI stay green
 tests/smoke.test.ts   Navigation honesty — a surface is built or labelled
 ```
+
+`tests/rls.test.ts` seeds and rolls back inside a transaction, so it proves isolation without leaving anything behind. It also asserts the `authenticated` role can *execute* the tenancy helpers — a policy that cannot call its own helper fails closed, which looks identical to correct isolation and would make the leak test pass for entirely the wrong reason.
 
 `tests/seed.test.ts` holds the demo data to exactly the contract the live agent is held to. If the snapshot could contain an uncited claim or a dangling citation, the product would be asserting an invariant the code does not enforce.
 

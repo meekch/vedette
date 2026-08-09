@@ -111,55 +111,16 @@ create type agent_kind          as enum ('discovery', 'analysis_scoring', 'execu
 -- and the Clerk user id in `sub`. Supabase validates the token via JWKS and
 -- exposes claims through auth.jwt().
 --
--- auth.org_id() resolves the caller's ACTIVE Clerk org to our internal
+-- app.org_id() resolves the caller's ACTIVE Clerk org to our internal
 -- organizations.id. Marked STABLE so Postgres evaluates it once per statement.
 -- SECURITY DEFINER so the lookup itself isn't blocked by RLS on organizations.
 
 create schema if not exists app;
 
-create or replace function auth.clerk_org()
-returns text
-language sql stable
-as $$
-  select nullif(auth.jwt() ->> 'org_id', '')
-$$;
-
-create or replace function auth.clerk_user()
-returns text
-language sql stable
-as $$
-  select nullif(auth.jwt() ->> 'sub', '')
-$$;
-
-create or replace function auth.org_id()
-returns uuid
-language sql stable security definer
-set search_path = public
-as $$
-  select o.id
-  from public.organizations o
-  where o.clerk_org_id = auth.clerk_org()
-$$;
-
--- Role of the current user within the current org (null if not a member).
-create or replace function auth.org_role()
-returns org_role
-language sql stable security definer
-set search_path = public
-as $$
-  select u.role
-  from public.users u
-  where u.organization_id = auth.org_id()
-    and u.clerk_user_id  = auth.clerk_user()
-$$;
-
--- Convenience predicate: caller may write engagement/domain data.
-create or replace function auth.can_write()
-returns boolean
-language sql stable
-as $$
-  select auth.org_role() in ('owner', 'admin', 'member')
-$$;
+-- RLS policies are evaluated as the querying role, so those roles need USAGE on
+-- the schema holding the tenancy helpers. A newly created schema grants USAGE to
+-- nobody but its owner, so without this every policy below fails at query time.
+grant usage on schema app to anon, authenticated, service_role;
 
 -- ----------------------------------------------------------------------------
 -- 3. updated_at trigger helper
@@ -347,7 +308,7 @@ create table public.systems (
   vendor          text,
   category        system_category not null default 'other',
   description     text,
-  source          author_kind not null default 'extracted',
+  source          process_source not null default 'extracted',
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );
@@ -598,14 +559,65 @@ end $$;
 -- Strategy (default-deny, tenant-isolated, role-gated writes):
 --   * RLS enabled on every table; the app connects as the `authenticated` role
 --     (never the table owner), so enabling is sufficient to enforce policies.
---   * SELECT: row.organization_id = auth.org_id()  → tenant isolation.
---   * INSERT/UPDATE/DELETE: same-tenant AND auth.can_write() (owner/admin/member).
+--   * SELECT: row.organization_id = app.org_id()  → tenant isolation.
+--   * INSERT/UPDATE/DELETE: same-tenant AND app.can_write() (owner/admin/member).
 --     'viewer' is read-only across domain data.
 --   * organizations/users get tighter policies (admins manage; users see own org).
 --   * The service-role key BYPASSES RLS entirely and is used only server-side by
 --     Clerk webhooks + ingestion jobs (see architecture §8). No client ever holds it.
 --
 -- Helper to cut boilerplate: one SELECT + one ALL(write) policy per domain table.
+
+-- ----------------------------------------------------------------------------
+-- 7A. Tenancy helpers (RLS reads these; they read the Clerk JWT)
+-- ----------------------------------------------------------------------------
+-- Defined here rather than beside the other helpers in section 3 because a SQL
+-- function body is validated when the function is created: app.org_id() selects
+-- from public.organizations, so it cannot exist before that table does.
+
+create or replace function app.clerk_org()
+returns text
+language sql stable
+as $$
+  select nullif(auth.jwt() ->> 'org_id', '')
+$$;
+
+create or replace function app.clerk_user()
+returns text
+language sql stable
+as $$
+  select nullif(auth.jwt() ->> 'sub', '')
+$$;
+
+create or replace function app.org_id()
+returns uuid
+language sql stable security definer
+set search_path = public
+as $$
+  select o.id
+  from public.organizations o
+  where o.clerk_org_id = app.clerk_org()
+$$;
+
+-- Role of the current user within the current org (null if not a member).
+create or replace function app.org_role()
+returns org_role
+language sql stable security definer
+set search_path = public
+as $$
+  select u.role
+  from public.users u
+  where u.organization_id = app.org_id()
+    and u.clerk_user_id  = app.clerk_user()
+$$;
+
+-- Convenience predicate: caller may write engagement/domain data.
+create or replace function app.can_write()
+returns boolean
+language sql stable
+as $$
+  select app.org_role() in ('owner', 'admin', 'member')
+$$;
 
 alter table public.organizations            enable row level security;
 alter table public.users                    enable row level security;
@@ -628,22 +640,22 @@ alter table public.agent_runs               enable row level security;
 
 -- 7.1 organizations — a member sees their own org; only owner/admin may update it.
 create policy org_select on public.organizations
-  for select using (id = auth.org_id());
+  for select using (id = app.org_id());
 create policy org_update on public.organizations
-  for update using (id = auth.org_id() and auth.org_role() in ('owner','admin'))
-  with check (id = auth.org_id());
+  for update using (id = app.org_id() and app.org_role() in ('owner','admin'))
+  with check (id = app.org_id());
 -- (insert/delete of organizations happens via service-role in the Clerk webhook.)
 
 -- 7.2 users — everyone in the org can see the member list; a user may update their
 --     own profile; owner/admin may manage any member in the org.
 create policy users_select on public.users
-  for select using (organization_id = auth.org_id());
+  for select using (organization_id = app.org_id());
 create policy users_update_self on public.users
-  for update using (organization_id = auth.org_id() and clerk_user_id = auth.clerk_user())
-  with check (organization_id = auth.org_id());
+  for update using (organization_id = app.org_id() and clerk_user_id = app.clerk_user())
+  with check (organization_id = app.org_id());
 create policy users_admin_write on public.users
-  for all using (organization_id = auth.org_id() and auth.org_role() in ('owner','admin'))
-  with check (organization_id = auth.org_id() and auth.org_role() in ('owner','admin'));
+  for all using (organization_id = app.org_id() and app.org_role() in ('owner','admin'))
+  with check (organization_id = app.org_id() and app.org_role() in ('owner','admin'));
 
 -- 7.3 Domain tables — uniform pattern: read within tenant, write if can_write().
 --     Generated below to keep the 16 domain tables perfectly consistent.
@@ -658,23 +670,23 @@ begin
     -- SELECT: any member of the tenant
     execute format($f$
       create policy %1$s_select on public.%1$s
-        for select using (organization_id = auth.org_id());
+        for select using (organization_id = app.org_id());
     $f$, t);
     -- INSERT: same tenant + writer role
     execute format($f$
       create policy %1$s_insert on public.%1$s
-        for insert with check (organization_id = auth.org_id() and auth.can_write());
+        for insert with check (organization_id = app.org_id() and app.can_write());
     $f$, t);
     -- UPDATE: same tenant + writer role
     execute format($f$
       create policy %1$s_update on public.%1$s
-        for update using (organization_id = auth.org_id() and auth.can_write())
-        with check (organization_id = auth.org_id() and auth.can_write());
+        for update using (organization_id = app.org_id() and app.can_write())
+        with check (organization_id = app.org_id() and app.can_write());
     $f$, t);
     -- DELETE: same tenant + writer role
     execute format($f$
       create policy %1$s_delete on public.%1$s
-        for delete using (organization_id = auth.org_id() and auth.can_write());
+        for delete using (organization_id = app.org_id() and app.can_write());
     $f$, t);
   end loop;
 end $$;
@@ -684,20 +696,20 @@ end $$;
 -- =============================================================================
 -- Bucket 'documents' is private. Object path convention:
 --   {organization_id}/{engagement_id}/{document_id}/{filename}
--- The first path segment is the tenant; policies compare it to auth.org_id().
+-- The first path segment is the tenant; policies compare it to app.org_id().
 --
 --   insert into storage.buckets (id, name, public) values ('documents','documents', false);
 --
 -- create policy "docs read within tenant" on storage.objects
 --   for select using (
 --     bucket_id = 'documents'
---     and (storage.foldername(name))[1] = auth.org_id()::text
+--     and (storage.foldername(name))[1] = app.org_id()::text
 --   );
 -- create policy "docs write within tenant" on storage.objects
 --   for insert with check (
 --     bucket_id = 'documents'
---     and (storage.foldername(name))[1] = auth.org_id()::text
---     and auth.can_write()
+--     and (storage.foldername(name))[1] = app.org_id()::text
+--     and app.can_write()
 --   );
 -- (update/delete mirror the insert predicate.)
 
