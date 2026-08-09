@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/nav/page-header";
 import { OpportunityCard } from "@/components/opportunities/opportunity-card";
+import { ProvenanceLegend } from "@/components/opportunities/legend";
 import type { EvidenceMap } from "@/components/opportunities/evidence";
 import { compositeScore } from "@/lib/scoring/dimensions";
 import { computeRoi, formatCurrency } from "@/lib/roi/model";
@@ -89,11 +90,17 @@ export default function OpportunitiesPage() {
           />
         </section>
 
-        <p className="max-w-3xl text-sm text-muted-foreground">
-          Every score below opens to its rationale and the source text behind it.
-          Every ROI figure is computed from the editable inputs beside it — the
-          model proposes hours, headcount, and rates; it never states a dollar
-          amount. Change an assumption and the numbers move immediately.
+        <ProvenanceLegend />
+
+        <p className="max-w-3xl text-xs text-muted-foreground">
+          <strong className="font-medium text-foreground/80">Real:</strong> the
+          scores, rationales, and coverage gaps below are the recorded output of an
+          actual <code className="font-mono">claude-opus-5</code> run over the
+          evidence; every currency figure is computed live in TypeScript.{" "}
+          <strong className="font-medium text-foreground/80">Seeded:</strong>{" "}
+          Meridian Field Services is a fictional company — its documents, people,
+          and numbers are invented, and internally consistent. It is not a real
+          customer.
         </p>
 
         <div className="space-y-6">

@@ -100,7 +100,9 @@ export function OpportunityCard({
                   aria-expanded={isOpen}
                   className="flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left hover:bg-muted/50"
                 >
-                  <span className="flex w-44 shrink-0 items-center gap-1.5 text-sm">
+                  {/* Widths step up at sm: the fixed columns total ~428px, which
+                      overflows a 375px viewport if they don't shrink. */}
+                  <span className="flex w-28 shrink-0 items-center gap-1.5 text-xs sm:w-44 sm:text-sm">
                     {dim.label}
                     {s.isAssumption && (
                       <span
@@ -124,13 +126,37 @@ export function OpportunityCard({
                     {s.score}
                     <span className="text-muted-foreground">/10</span>
                   </span>
-                  <span className="w-10 shrink-0 text-right font-mono text-xs text-muted-foreground tabular-nums">
+                  <span
+                    className="hidden w-10 shrink-0 text-right font-mono text-xs text-muted-foreground tabular-nums sm:inline"
+                    title="Model confidence in this score"
+                  >
                     {Math.round(s.confidence * 100)}%
+                  </span>
+
+                  {/* The provenance of a score has to be visible before you click
+                      it. Without this, a reviewer has no way to know the evidence
+                      trail exists — the feature the whole product is arguing for
+                      was one undiscoverable click away. */}
+                  <span className="flex w-24 shrink-0 items-center justify-end gap-1 text-xs sm:w-28">
+                    {s.isAssumption ? (
+                      <span className="text-amber-600 dark:text-amber-500">assumption</span>
+                    ) : (
+                      <span className="text-foreground/70 underline decoration-dotted underline-offset-2">
+                        {s.evidenceIds.length} source
+                        {s.evidenceIds.length === 1 ? "" : "s"}
+                      </span>
+                    )}
+                    <span
+                      aria-hidden
+                      className={`text-muted-foreground transition-transform ${isOpen ? "rotate-90" : ""}`}
+                    >
+                      ›
+                    </span>
                   </span>
                 </button>
 
                 {isOpen && (
-                  <div className="px-2 pb-3 pl-[12.5rem]">
+                  <div className="px-2 pb-3 sm:pl-[12.5rem]">
                     <p className="text-sm leading-relaxed text-foreground/90">
                       {s.rationale}
                     </p>

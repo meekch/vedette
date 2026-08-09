@@ -29,19 +29,25 @@ export default function LandingPage() {
         </h1>
         <p className="mt-6 max-w-2xl text-lg text-muted-foreground">
           Vedette is deployed forward into an organization&rsquo;s documents,
-          workflows, and people. It runs guided discovery, scores AI
-          opportunities against visible evidence, models ROI you can inspect,
-          and produces executive-ready deliverables — never from thin air.
+          workflows, and people. It scores AI opportunities against evidence you
+          can click through to the source text, and models ROI in deterministic
+          code — the model proposes hours and headcount, never dollars.
+        </p>
+        <p className="mt-3 max-w-2xl text-sm text-muted-foreground">
+          The demo runs a fictional engagement end to end: seven opportunities
+          scored by <code className="font-mono">claude-opus-5</code> over 26
+          document chunks, each score traceable to its source, each ROI figure
+          recalculating as you edit its assumptions.
         </p>
         <div className="mt-8 flex flex-wrap gap-3">
           <Link href="/opportunities" className={buttonVariants({ size: "lg" })}>
-            See a scored opportunity backlog
+            Explore the Meridian demo →
           </Link>
           <Link
             href="/dashboard"
             className={buttonVariants({ variant: "outline", size: "lg" })}
           >
-            Enter the demo workspace
+            Engagement dashboard
           </Link>
         </div>
       </section>
