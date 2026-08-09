@@ -88,6 +88,11 @@ export async function runAnalysis(context: AnalysisContext): Promise<AnalysisRun
   const { object, usage } = await generateObject({
     model,
     schema: opportunitySetSchema,
+    // A full analysis is several thousand tokens of JSON, and on models with
+    // adaptive thinking the output cap covers reasoning *and* the response. Left
+    // at the SDK default, generation truncates mid-object and surfaces as
+    // "response did not match schema" — which reads like a schema bug and isn't.
+    maxOutputTokens: 32000,
     system: SYSTEM_PROMPT,
     prompt: `# Client
 

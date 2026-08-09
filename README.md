@@ -105,8 +105,10 @@ Scope discipline is part of the work, so this is explicit.
 |---|---|
 | **Opportunity backlog** — scoring across 8 dimensions, per-dimension evidence, inspectable ROI, coverage gaps | ✅ **Built** |
 | **Deterministic ROI engine** — pure TypeScript, 21 tests | ✅ **Built** |
-| **Analysis & Scoring Agent** — Zod-validated, provider-swappable | ✅ **Built** |
+| **Analysis & Scoring Agent** — Zod-validated, provider-swappable, `claude-opus-5` | ✅ **Built** |
 | **Demo engagement** — Meridian Field Services, 8 documents, 26 chunks | ✅ **Built** |
+
+The committed analysis is a real run: 7 opportunities and 13 coverage gaps, citing **all 26** available chunks, with 13 of 56 dimension scores self-flagged as assumptions. It passes the same evidence contract the schema enforces at generation time — `npm test` re-checks that on every run.
 | Dashboard | ✅ Built (derived from seed, no hardcoded figures) |
 | Document ingestion + entity browser | ⏳ Phase 2 — honest stub |
 | Adaptive discovery + interview tracker | ⏳ Phase 3 — honest stub |
@@ -115,7 +117,7 @@ Scope discipline is part of the work, so this is explicit.
 **Deliberately deferred:**
 
 - **Auth.** Clerk is specified in [ADR-002](docs/adr/ADR-002.md) and the RLS policies in the schema already assume its `org_id` claim, but it is not wired. Running single-tenant costs the demo nothing a viewer can see, and the alternative was shipping the demo a week later with a login screen in front of it. The multi-tenancy is in the data model, where it is hard to retrofit; the session plumbing is not, where it isn't.
-- **Live model call on page load.** The demo renders a committed analysis snapshot. `npm run analyze` regenerates it with a real model call. A demo that costs money per viewer and can fail mid-presentation is a worse demo.
+- **Live model call on page load.** The demo renders a committed analysis snapshot — the recorded output of a real `claude-opus-5` run over the seeded evidence, regenerated with `npm run analyze`. A demo that costs money per viewer and can fail mid-presentation is a worse demo.
 - Scenario planning, external integrations (M365/Salesforce/Jira), continuous learning, pptx export — documented in [`docs/PHASES.md`](docs/PHASES.md), not built.
 
 ---
@@ -156,12 +158,14 @@ Provider swapping is a config change, not a rewrite — that claim from [ADR-003
 
 ## Three-minute demo path
 
-1. **`/opportunities`** — five scored opportunities, ranked by weighted score. Note the portfolio header: every figure is computed from the cards below it.
+1. **`/opportunities`** — seven scored opportunities, ranked by weighted score. Every figure in the portfolio header is computed from the cards below it.
 2. **Expand a dimension score** (click any row, e.g. *Impact* on the top opportunity). Rationale, weight, polarity — and the evidence chips beneath it.
-3. **Click an evidence chip.** The actual source text. Note `dispatch process notes (working).docx` is flagged **unstructured source** — it is deliberately messy, and it *contradicts* the SOP on how many approvals are required. Real client documents disagree with each other.
+3. **Click an evidence chip.** The actual source text. Note `dispatch process notes (working).docx` is flagged **unstructured source** — it is deliberately messy, and it *contradicts* the SOP on how many approvals are required. The agent noticed: one opportunity is specifically about the approval step that "stopped happening months ago" while the SOP still claims three sign-offs.
 4. **Open the ROI model.** Left: what the model proposed, each field expandable to its basis and evidence. Right: what TypeScript computed. Amber dots mark assumptions.
-5. **Edit an input** — drop *Steady-state adoption* from 85% to 40%. Every figure recomputes instantly. This is the moment the tool stops being a slide and becomes a model an executive can argue with.
-6. **Scroll to the bottom.** *What this analysis could not determine* — five open questions, including a loaded-cost figure that is unestablished because the payroll export was requested and never received. An analysis that reports no gaps is not more complete; it is less honest.
+5. **Find one that doesn't pay back.** Three of the seven never turn positive inside 36 months, because the agent priced the build and run costs high against conservative hour estimates. **This is the demo.** Open *Self-serve work order status*, note that implementation and run cost are both flagged as assumptions with no evidence behind them, and drop the annual run cost. Payback appears. The tool did not flatter the business case, and the consultant's job — interrogating which assumption is load-bearing — is what the interface is built for.
+6. **Scroll to the bottom.** *What this analysis could not determine* — thirteen open questions, including a loaded-cost figure that is unestablished because the payroll export was requested and never received. An analysis that reports no gaps is not more complete; it is less honest.
+
+> The numbers on this demo are deliberately un-tuned. The snapshot is whatever the model said, held to the evidence contract by the test suite and otherwise unedited — including where that makes the business case look weak.
 
 ---
 

@@ -14,6 +14,7 @@
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { config } from "dotenv";
+import { NoObjectGeneratedError } from "ai";
 import { runAnalysis } from "../src/lib/ai/agents/analysis";
 import { MERIDIAN_EVIDENCE } from "../seed/meridian/documents";
 import { MERIDIAN_ORG, MERIDIAN_OBJECTIVES } from "../seed/meridian/profile";
@@ -79,5 +80,22 @@ async function main() {
 
 main().catch((err) => {
   console.error(`\n✗ ${err instanceof Error ? err.message : String(err)}`);
+
+  // A schema rejection is the interesting failure — it means the agent broke the
+  // evidence contract, or the generation truncated. Both are diagnosable only
+  // from the validation issues and the raw text, so print them rather than
+  // leaving the operator with "did not match schema".
+  if (NoObjectGeneratedError.isInstance(err)) {
+    const cause = err.cause as { cause?: { issues?: unknown } } | undefined;
+    if (cause?.cause?.issues) {
+      console.error("\nValidation issues:");
+      console.error(JSON.stringify(cause.cause.issues, null, 2).slice(0, 4000));
+    }
+    if (err.finishReason) console.error(`\nFinish reason: ${err.finishReason}`);
+    if (err.text) {
+      console.error(`\nRaw output (last 600 chars of ${err.text.length}):`);
+      console.error(err.text.slice(-600));
+    }
+  }
   process.exit(1);
 });

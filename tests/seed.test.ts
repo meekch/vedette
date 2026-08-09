@@ -65,20 +65,40 @@ describe("Meridian analysis snapshot", () => {
     expect(violations).toEqual([]);
   });
 
-  it("contains no currency figure anywhere in a rationale or summary", () => {
-    // The agent must not state money in prose either — the schema can only stop
-    // it from having a numeric field to put one in.
-    const prose = MERIDIAN_ANALYSIS.opportunities.flatMap((o) => [
-      o.summary,
-      o.problemStatement,
-      ...o.scores.map((s) => s.rationale),
-    ]);
-    const offenders = prose.filter((t) => /\$[\d,]/.test(t));
-    // Quoting a figure the client stated is legitimate; inventing one is not.
-    // Every permitted occurrence must be a direct quote from the evidence.
-    for (const text of offenders) {
-      expect(text).toMatch(/\$310,000|\$62k|\$410k|\$310k/);
+  it("states no dollar figure in prose that is absent from the source documents", () => {
+    // The schema stops the agent having a currency *field* to fill. It cannot
+    // stop it writing money into prose, so that is checked here.
+    //
+    // The rule is not "no dollar signs" — quoting a figure the client themselves
+    // stated is exactly right, and the agent legitimately cites the SOP's $2,500
+    // approval threshold. The rule is that every figure must trace to the
+    // evidence. Amounts are compared by magnitude, not text, so a faithful
+    // restatement of "$310,000" as "$310k" passes while an invented number fails.
+    const magnitudes = (text: string): number[] =>
+      [...text.matchAll(/\$\s?([\d,]+(?:\.\d+)?)\s*([kKmM])?/g)].map(([, num, suffix]) => {
+        const base = Number(num.replace(/,/g, ""));
+        if (/[kK]/.test(suffix ?? "")) return base * 1_000;
+        if (/[mM]/.test(suffix ?? "")) return base * 1_000_000;
+        return base;
+      });
+
+    const evidenceAmounts = new Set(
+      MERIDIAN_EVIDENCE.flatMap((c) => magnitudes(c.content)),
+    );
+
+    const invented: string[] = [];
+    for (const opp of MERIDIAN_ANALYSIS.opportunities) {
+      const prose = [opp.summary, opp.problemStatement, ...opp.scores.map((s) => s.rationale)];
+      for (const text of prose) {
+        for (const amount of magnitudes(text)) {
+          if (!evidenceAmounts.has(amount)) {
+            invented.push(`${opp.title}: $${amount.toLocaleString()}`);
+          }
+        }
+      }
     }
+
+    expect(invented).toEqual([]);
   });
 
   it("records coverage gaps rather than implying complete knowledge", () => {
